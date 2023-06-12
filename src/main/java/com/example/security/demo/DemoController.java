@@ -1,6 +1,6 @@
 package com.example.security.demo;
 
-import com.example.security.exception.NotFoundException;
+import com.example.security.exception.BadRequestException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -15,8 +15,8 @@ public class DemoController {
         return ResponseEntity.ok("Hello from secured endpoint!");
     }
 
-    @GetMapping("/404")
-    public ResponseEntity<String> sayHello404() {
-        throw new NotFoundException("Page not found");
+    @GetMapping("/400")
+    public ResponseEntity<String> sayHello400() {
+        throw new BadRequestException("Bad request format");
     }
 }
