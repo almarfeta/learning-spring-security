@@ -13,6 +13,11 @@ spring:
         format_sql: true
     database: postgresql
     database-platform: org.hibernate.dialect.PostgreSQLDialect
+  mail:
+    host: localhost
+    port: 1025
+    username: maildev
+    password: maildev
 #server:
 #  error:
 #    include-message: always

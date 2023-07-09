@@ -1,15 +1,17 @@
 package com.example.security.user;
 
+import com.example.security.confirmationToken.ConfirmationToken;
 import com.example.security.token.Token;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 
@@ -24,9 +26,14 @@ public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private Integer id;
+
     private String firstName;
+
     private String lastName;
+
+    @Column(unique = true)
     private String email;
+
     private String password;
 
     @Enumerated(EnumType.STRING)
@@ -34,6 +41,16 @@ public class User implements UserDetails {
 
     @OneToMany(mappedBy = "user")
     private List<Token> tokens;
+
+    private Boolean activated;
+
+    @OneToOne(mappedBy = "user")
+    @JsonBackReference
+    private ConfirmationToken confirmationToken;
+
+    public boolean isDeleted() {
+        return !activated && confirmationToken.getExpiresAt().isBefore(LocalDateTime.now());
+    }
 
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
@@ -67,6 +84,6 @@ public class User implements UserDetails {
 
     @Override
     public boolean isEnabled() {
-        return true;
+        return activated;
     }
 }

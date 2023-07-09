@@ -1,18 +1,26 @@
 package com.example.security.auth;
 
 import com.example.security.config.JwtService;
+import com.example.security.confirmationToken.ConfirmationToken;
+import com.example.security.confirmationToken.ConfirmationTokenRepository;
+import com.example.security.email.EmailSender;
+import com.example.security.exception.BadRequestException;
 import com.example.security.token.Token;
 import com.example.security.token.TokenRepository;
 import com.example.security.token.TokenType;
 import com.example.security.user.Role;
 import com.example.security.user.User;
 import com.example.security.user.UserRepository;
+import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -23,6 +31,8 @@ public class AuthenticationService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final AuthenticationManager authenticationManager;
+    private final ConfirmationTokenRepository confirmationTokenRepository;
+    private final EmailSender emailSender;
 
     private void saveUserToken(User savedUser, String jwtToken) {
         var token = Token.builder()
@@ -47,22 +57,59 @@ public class AuthenticationService {
         tokenRepository.saveAll(validUserToken);
     }
 
-    public AuthenticationResponse register(RegisterRequest request) {
+    public String register(RegisterRequest request) {
+        if (repository.findByEmail(request.getEmail()).isPresent()) {
+            User user = repository.findByEmail(request.getEmail()).get();
+            if (user.isDeleted()) {
+                confirmationTokenRepository.delete(user.getConfirmationToken());
+                repository.delete(user);
+            } else {
+                throw new BadRequestException("Email taken");
+            }
+        }
+
         var user = User.builder()
                 .firstName(request.getFirstName())
                 .lastName(request.getLastName())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
-                .role(Role.ADMIN)
+                .role(Role.USER)
+                .activated(false)
                 .build();
         var savedUser = repository.save(user);
-        var jwtToken = jwtService.generateToken(user);
-        saveUserToken(savedUser, jwtToken);
-        return AuthenticationResponse.builder()
-                .token(jwtToken)
+
+        var activationToken = ConfirmationToken.builder()
+                .token(UUID.randomUUID().toString())
+                .expiresAt(LocalDateTime.now().plusMinutes(15))
+                .user(savedUser)
                 .build();
+        confirmationTokenRepository.save(activationToken);
+
+        String to = user.getEmail();
+        String subject = "Account activation";
+        String text = "<h3>Please activate your account by clicking the link below:</h3>\n" +
+                "<a href=\"http://localhost:8080/api/v1/auth/activate?token=" + activationToken.getToken() + "\">Click here</a>";
+        emailSender.send(to, subject, text);
+        return "Account created, activation e-mail has been sent";
     }
 
+    @Transactional
+    public String activate(String token) {
+        ConfirmationToken confirmationToken = confirmationTokenRepository.findByToken(token)
+                .orElseThrow(() -> new BadRequestException("Token not found"));
+
+        if (confirmationToken.getExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new BadRequestException("Token expired");
+        }
+
+        if (confirmationToken.getUser().getActivated()) {
+            throw new BadRequestException("Already activated");
+        }
+
+        confirmationToken.getUser().setActivated(true);
+
+        return "Account has been activated successfully";
+    }
 
     public AuthenticationResponse authenticate(AuthenticationRequest request) {
         authenticationManager.authenticate(
